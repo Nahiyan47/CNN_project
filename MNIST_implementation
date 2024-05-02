@@ -1,0 +1,94 @@
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from sklearn.model_selection import StratifiedKFold
+import matplotlib.pyplot as plt
+
+# Load dataset
+train_data = pd.read_csv('optdigits.tra', header=None)
+test_data = pd.read_csv('optdigits.tes', header=None)
+
+# Normalize pixel values
+X_train = train_data.iloc[:, :-1].values.astype('float32') / 16.0
+y_train = train_data.iloc[:, -1].values.astype('int')
+X_test = test_data.iloc[:, :-1].values.astype('float32') / 16.0
+y_test = test_data.iloc[:, -1].values.astype('int')
+
+# Reshape data into 8x8 images
+X_train = X_train.reshape(-1, 8, 8, 1)
+X_test = X_test.reshape(-1, 8, 8, 1)
+
+# Define CNN model architecture
+def create_model():
+    model = models.Sequential([
+        layers.Conv2D(32, (3, 3), activation='relu', input_shape=(8, 8, 1), padding='same'),
+        #max pooling implementing here
+        layers.MaxPooling2D((2, 2)),
+        layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+        #max pooling implementing here
+        layers.MaxPooling2D((2, 2)),
+        layers.Flatten(),
+        layers.Dense(128, activation='relu'),
+        layers.Dense(10, activation='softmax')
+    ])
+    
+    model.compile(optimizer='adam',
+                  loss='sparse_categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    model.summary()
+    
+    return model
+
+
+# Perform k-fold cross-validation (5 folds)
+kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+fold_accuracy = []
+
+for train_idx, val_idx in kfold.split(X_train, y_train):
+    X_train_fold, X_val_fold = X_train[train_idx], X_train[val_idx]
+    y_train_fold, y_val_fold = y_train[train_idx], y_train[val_idx]
+
+    model = create_model()
+    history = model.fit(X_train_fold, y_train_fold, epochs=10, validation_data=(X_val_fold, y_val_fold), verbose=0)
+
+    _, accuracy = model.evaluate(X_val_fold, y_val_fold, verbose=0)
+    fold_accuracy.append(accuracy)
+
+# Evaluate the final model on the test data
+final_model = create_model()
+final_model.fit(X_train, y_train, epochs=10, verbose=0)
+test_loss, test_acc = final_model.evaluate(X_test, y_test)
+
+print(f'Test accuracy: {test_acc:.4f}')
+
+# Plot training history (loss and accuracy)
+plt.figure(figsize=(12, 4))
+plt.subplot(1, 2, 1)
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend()
+
+plt.subplot(1, 2, 2)
+plt.plot(history.history['accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend()
+
+plt.show()
+
+# Display confusion matrix for the final model's performance on the test data
+y_pred = np.argmax(final_model.predict(X_test), axis=-1)
+conf_matrix = tf.math.confusion_matrix(y_test, y_pred)
+
+plt.figure(figsize=(8, 6))
+plt.imshow(conf_matrix, cmap='Blues', interpolation='nearest')
+plt.title('Confusion Matrix')
+plt.colorbar()
+plt.xlabel('Predicted Label')
+plt.ylabel('True Label')
+plt.show()
